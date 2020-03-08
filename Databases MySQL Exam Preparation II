@@ -1,0 +1,214 @@
+1.
+
+CREATE TABLE locations
+(
+             id        INT  PRIMARY KEY auto_increment,
+             latitude  FLOAT,
+             longitude FLOAT
+);
+
+CREATE TABLE credentials
+(
+             id       INT  PRIMARY KEY auto_increment,
+             email    VARCHAR(30),
+             password VARCHAR(20)
+);
+
+CREATE TABLE users
+(
+             id           INT  PRIMARY KEY auto_increment,
+             nickname     VARCHAR(25),
+             gender       CHAR(1),
+             age          INT,
+             location_id   INT,
+             credential_id INT
+             UNIQUE,
+             CONSTRAINT FK_Users_Locations FOREIGN KEY(location_id) REFERENCES locations(id),
+             CONSTRAINT FK_Users_Credentials FOREIGN KEY(credential_id) REFERENCES credentials(id)
+);
+
+CREATE TABLE chats
+(
+             id        INT  PRIMARY KEY auto_increment,
+             title     VARCHAR(32),
+             start_date DATE,
+             is_active  BIT
+);
+
+CREATE TABLE messages
+(
+             id      INT  PRIMARY KEY auto_increment,
+             content VARCHAR(200),
+             sent_on  DATE,
+             chat_id  INT,
+             user_id  INT,
+             CONSTRAINT FK_Messages_Chats FOREIGN KEY(chat_id) REFERENCES chats(id),
+             CONSTRAINT FK_Messages_Users FOREIGN KEY(user_id) REFERENCES users(id)
+);
+
+CREATE TABLE users_chats
+(
+             user_id INT,
+             chat_id INT,
+             CONSTRAINT PK_UsersChats PRIMARY KEY(chat_id, user_id),
+             CONSTRAINT FK_UsersChats_Users FOREIGN KEY(user_id) REFERENCES users(id),
+             CONSTRAINT FK_UsersChats_Chats FOREIGN KEY(chat_id) REFERENCES chats(id)
+
+);
+
+2.
+ALTER TABLE messages
+DROP FOREIGN KEY FK_Messages_Chats;
+
+INSERT INTO messages(content,sent_on,chat_id,user_id)
+SELECT
+CONCAT(u.age,'-',u.gender,'-',l.latitude,'-',l.longitude),
+'2016-12-15',
+CASE
+WHEN u.gender='F' THEN CEIL(SQRT(u.age*2))
+WHEN u.gender='M' THEN CEIL(POWER((age/18),3))
+END,
+u.id
+FROM 
+users AS u 
+JOIN locations AS l ON u.location_id=l.id
+WHERE u.id BETWEEN 10 AND 20;
+
+3.
+UPDATE chats c
+LEFT JOIN messages AS m ON c.id=m.chat_id
+SET start_date=(SELECT m.sent_on from messages ORDER BY m.sent_on LIMIT 1)
+WHERE m.sent_on < c.start_date 
+
+4.
+DELETE FROM locations
+WHERE id NOT IN (SELECT u.location_id FROM users AS u WHERE u.location_id IS NOT NULL);
+
+5.
+SELECT nickname,gender,age
+FROM users 
+WHERE age BETWEEN 22 AND 37
+ORDER BY id
+
+6.
+SELECT content,sent_on
+FROM messages
+WHERE sent_on > '2014-05-12' AND content LIKE '%just%'
+ORDER BY id desc
+
+7.
+SELECT title,is_active
+FROM chats
+WHERE is_active=0 AND CHAR_LENGTH(title) < 5 OR SUBSTRING(title,3,2)='tl'
+ORDER BY title desc
+
+8.
+SELECT c.id,c.title,m.id
+FROM chats AS c 
+JOIN messages AS m ON c.id=m.chat_id
+WHERE m.sent_on < '2012-03-26' AND RIGHT(c.title,1)='x'
+ORDER BY c.id,m.id
+
+9.
+SELECT c.id,COUNT(m.id) AS counts
+FROM chats AS c 
+JOIN messages AS m ON c.id=m.chat_id
+WHERE m.id < 90
+GROUP BY c.id
+ORDER BY counts desc,c.id
+LIMIT 5
+
+10.
+SELECT u.nickname,c.email,c.password
+FROM users AS u 
+JOIN credentials AS c ON c.id=u.credential_id
+WHERE RIGHT(c.email,5)='co.uk'
+ORDER BY c.email
+
+11.
+SELECT id,nickname,age
+FROM users
+WHERE location_id IS NULL
+ORDER BY id
+
+12.
+SELECT m.id,m.chat_id,m.user_id
+FROM messages AS m
+WHERE m.chat_id=17 AND (m.user_id NOT IN(SELECT uc.user_id FROM users_chats AS uc JOIN messages AS m on m.chat_id=uc.chat_id where uc.user_id=m.user_id) OR  m.user_id IS NULL)
+ORDER BY m.id desc;
+
+13.
+SELECT u.nickname,c.title,l.latitude,l.longitude
+FROM users AS u
+JOIN locations AS l ON l.id=u.location_id
+JOIN users_chats AS uc ON uc.user_id=u.id
+JOIN chats AS c ON uc.chat_id=c.id
+WHERE l.latitude BETWEEN 41.139999 AND 44.129999 and l.longitude BETWEEN 22.209999 AND 28.359999
+ORDER BY c.title
+
+14.
+SELECT 
+    c.`title`, m.`content`
+FROM
+    `chats` AS c
+        INNER JOIN
+    `messages` AS m ON c.`id` = m.`chat_id`
+WHERE
+    c.`id` = (SELECT 
+            c.`id`
+        FROM
+            `chats` AS c
+        ORDER BY c.`start_date` DESC
+        LIMIT 1)
+ORDER BY m.`sent_on` , m.`id` ASC;
+
+
+15.
+CREATE FUNCTION udf_get_radians(degrees float)
+RETURNS FLOAT
+BEGIN
+DECLARE result FLOAT;
+SET result:=(PI()*(degrees))/180;
+RETURN result;
+END
+
+16.
+CREATE PROCEDURE udp_change_password(email VARCHAR(30),new_password VARCHAR(30))
+BEGIN
+START TRANSACTION;
+IF email NOT IN(SELECT email FROM credentials)
+THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'The email doest exist!';
+ROLLBACK;
+ELSE
+UPDATE credentials c
+SET c.password=new_password
+WHERE c.email=email;
+END IF;
+COMMIT;
+END
+
+17.
+CREATE PROCEDURE udp_send_message(user_id INT,chat_id INT,content VARCHAR(100))
+BEGIN
+START TRANSACTION;
+IF chat_id NOT IN(SELECT uc.chat_id FROM users_chats as uc WHERE uc.user_id=user_id)
+THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'There is no chat with that user!';
+ROLLBACK;
+else
+INSERT INTO messages(content,sent_on,chat_id,user_id)
+VALUES
+(content,'2016-12-15',chat_id,user_id);
+END IF;
+COMMIT;
+END
+
+18.
+CREATE TRIGGER deleted_messages AFTER DELETE 
+ON messages
+FOR EACH ROW
+BEGIN   
+INSERT INTO messages_log(id,content,sent_on,chat_id,user_id)
+VALUES(old.id,old.content,old.sent_on,old.chat_id,old.user_id);
+END
+
+
