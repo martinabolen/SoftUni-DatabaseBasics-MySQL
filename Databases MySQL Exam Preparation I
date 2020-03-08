@@ -1,0 +1,236 @@
+1.
+CREATE TABLE towns  (
+	town_id INT PRIMARY KEY auto_increment,
+	town_name VARCHAR(30) NOT NULL
+);
+
+CREATE TABLE airports  
+	(
+    airport_id  INT PRIMARY KEY auto_increment,
+	airport_name VARCHAR(50) NOT NULL,
+	town_id INT NOT NULL,
+	CONSTRAINT FK_Airports_Towns FOREIGN KEY(town_id) REFERENCES towns(town_id)
+);
+
+CREATE TABLE airlines (
+	airline_id INT PRIMARY KEY auto_increment,
+	airline_name VARCHAR(30) NOT NULL,
+	nationality VARCHAR(30) NOT NULL,
+	rating INT DEFAULT 0
+);
+
+CREATE TABLE customers (
+	customer_id INT PRIMARY KEY auto_increment,
+	first_name VARCHAR(20) NOT NULL,
+	last_name VARCHAR(20) NOT NULL,
+	date_of_birth DATE NOT NULL,
+	gender VARCHAR(1) NOT NULL CHECK (Gender='M' OR Gender='F'),
+	home_town_id INT NOT NULL,
+	CONSTRAINT FK_Customers_Towns FOREIGN KEY(home_town_id) REFERENCES Towns(town_id)
+);
+
+CREATE TABLE flights
+(
+flight_id INT PRIMARY KEY auto_increment,
+departure_time DATETIME NOT NULL,
+arrival_time DATETIME NOT NULL,
+status VARCHAR(9) NOT NULL CHECK (Status IN ('Departing', 'Delayed', 'Arrived', 'Cancelled')),
+origin_airport_id INT,
+destination_airport_id INT,
+airline_id INT,
+CONSTRAINT FK_Flights_Airports_Origin FOREIGN KEY (origin_airport_id) REFERENCES airports (airport_id),
+CONSTRAINT FK_Flights_Airports_Destination FOREIGN KEY (destination_airport_id) REFERENCES airports (airport_id),
+CONSTRAINT FK_Flights_Airlines FOREIGN KEY (airline_id) REFERENCES airlines (airline_id)
+);
+
+CREATE TABLE tickets
+(
+ticket_id INT PRIMARY KEY auto_increment,
+price DECIMAL(8,2) NOT NULL,
+class VARCHAR(6) CHECK (Class IN('First', 'Second', 'Third')),
+seat VARCHAR(5) NOT NULL,
+customer_id INT,
+flight_id INT,
+CONSTRAINT FK_Tickets_Customers FOREIGN KEY (customer_id) REFERENCES customers (customer_id),
+CONSTRAINT FK_Tickets_Flights FOREIGN KEY (flight_id) REFERENCES flights (flight_id)
+);
+
+2.
+INSERT INTO flights(departure_time,arrival_time,status,origin_airport_id,destination_airport_id,airline_id) 
+SELECT 
+'2017-06-19 14:00:00', 
+'2017-06-21 11:00:00', 
+CASE 
+WHEN a.airline_id%4=0 THEN 'Departing' 
+WHEN a.airline_id%4=1 THEN 'Delayed' 
+WHEN a.airline_id%4=2 THEN 'Arrived' 
+WHEN a.airline_id%4=3 THEN 'Canceled'  
+END AS status, 
+ceiling(SQRT(CHAR_LENGTH(a.airline_name))), 
+ceiling(SQRT(CHAR_LENGTH(a.nationality))), 
+a.airline_id  FROM airlines AS a 
+WHERE a.airline_id BETWEEN 1 AND 10;
+
+3.
+UPDATE flights 
+SET airline_id=1 
+WHERE status='Arrived';
+
+4.
+UPDATE tickets t 
+JOIN flights AS f ON f.flight_id=t.flight_id 
+JOIN airlines AS a ON a.airline_id=f.airline_id 
+SET price=price*1.5 
+WHERE (SELECT MAX(a.rating) 
+
+
+
+5.
+SELECT ticket_id,price,class,seat
+FROM tickets
+ORDER BY ticket_id;
+
+
+6.
+SELECT customer_id,CONCAT(first_name,' ',last_name) AS full_name,gender
+FROM customers
+ORDER BY full_name,customer_id;
+
+7.
+SELECT flight_id,departure_time,arrival_time
+FROM flights
+WHERE status= 'Delayed'
+ORDER BY flight_id;
+
+8.
+SELECT flight_id,departure_time,arrival_time
+FROM flights
+WHERE status= 'Delayed'
+ORDER BY flight_id;
+
+9.
+SELECT t.ticket_id,a.airport_name AS destination,CONCAT(c.first_name,' ',c.last_name) AS customer_name
+FROM tickets AS t
+JOIN customers AS c ON t.customer_id=c.customer_id
+JOIN flights AS f ON f.flight_id=t.flight_id
+JOIN airports AS a ON a.airport_id=f.destination_airport_id
+WHERE t.price < 5000 AND t.class= 'First'
+ORDER BY t.ticket_id asc;
+
+10.
+SELECT DISTINCT c.customer_id,CONCAT(c.first_name,' ',last_name) AS full_name,tw.town_name AS home_town
+FROM customers AS c
+JOIN tickets AS t ON t.customer_id=c.customer_id
+JOIN flights AS f ON f.flight_id=t.flight_id
+JOIN airports AS a ON a.airport_id=f.origin_airport_id
+JOIN towns AS tw ON tw.town_id=c.home_town_id
+JOIN towns AS tow ON tow.town_id=a.town_id
+WHERE tw.town_id=a.town_id AND f.status='Departing'
+ORDER BY c.customer_id; 
+
+11.
+SELECT distinct c.customer_id,CONCAT(c.first_name,' ',c.last_name) as customer_name,'2016'- year(date_of_birth) AS age
+FROM tickets AS t
+JOIN customers AS c ON c.customer_id=t.customer_id
+JOIN flights as f ON f.flight_id=t.flight_id
+WHERE f.status='Departing'
+ORDER BY age,c.customer_id;
+
+12.
+SELECT c.customer_id,CONCAT(c.first_name,' ',c.last_name) as customer_name,t.price,a.airport_name
+FROM customers AS c 
+JOIN tickets as t ON t.customer_id=c.customer_id
+JOIN flights AS f ON f.flight_id=t.flight_id
+JOIN airports AS a ON a.airport_id=f.destination_airport_id
+where f.status='Delayed'
+ORDER BY t.price desc,c.customer_id
+limit 3
+
+13.
+SELECT k.flight_id,k.departure_time,k.arrival_time,k.origin,k.destination
+FROM
+(SELECT f.flight_id,f.departure_time,f.arrival_time,ai.airport_name AS origin,a.airport_name AS destination
+FROM flights AS f 
+JOIN airports AS a ON a.airport_id=f.destination_airport_id
+JOIN airports AS ai ON ai.airport_id=f.origin_airport_id
+WHERE f.status='Departing'
+ORDER BY f.departure_time desc 
+LIMIT 5) as k
+ORDER BY k.departure_time,k.flight_id;
+
+14.
+SELECT k.customer_id,k.full_name,k.age
+FROM 
+(SELECT DISTINCT c.customer_id,CONCAT(c.first_name,' ',c.last_name) AS full_name,'2016' - YEAR(c.date_of_birth) AS age
+FROM tickets AS t
+JOIN customers AS c ON c.customer_id=t.customer_id
+JOIN flights AS f ON f.flight_id=t.flight_id
+WHERE f.status='Arrived') as k
+WHERE k.age < 21
+ORDER BY k.age desc,k.customer_id;
+
+15.
+SELECT a.airport_id,a.airport_name,COUNT(t.customer_id) as passenger
+FROM airports AS a
+LEFT JOIN flights AS f ON a.airport_id=f.origin_airport_id
+JOIN tickets AS t ON t.flight_id=f.flight_id
+JOIN customers AS c ON c.customer_id=t.customer_id
+WHERE f.status='Departing'
+GROUP BY a.airport_id,a.airport_name
+HAVING COUNT(t.customer_id) IS NOT NULL
+ORDER BY a.airport_id; 
+
+16.
+CREATE PROCEDURE udp_submit_review(customer_id INT,review_content VARCHAR(255),review_grade INT,airline_name VARCHAR(30))
+BEGIN
+DECLARE airline_id INT;
+SET airline_id:=(SELECT a.airline_id FROM airlines AS a WHERE a.airline_name=airline_name);
+IF(airline_id IS NULL)
+THEN
+SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Airline does not exist.';
+ROLLBACK;
+END IF;
+INSERT INTO customer_reviews(review_content,review_grade,airline_id,customer_id)
+VALUES(review_content,review_grade,airline_id,customer_id);
+END
+
+17.
+CREATE PROCEDURE udp_purchase_ticket(customer_id INT,flight_id INT,ticket_price DECIMAL(8,2),class VARCHAR(6),seat VARCHAR(5))
+BEGIN
+DECLARE customer_balance DECIMAL; 
+SET customer_balance:=(SELECT balance FROM customer_bank_accounts AS cba WHERE cba.customer_id=customer_id);
+START TRANSACTION; 
+IF(customer_balance < ticket_price)
+THEN 
+SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = '‘Insufficient bank account
+balance for ticket purchase.';
+ROLLBACK;
+END IF;
+INSERT INTO tickets(price,class,seat,customer_id,flight_id)
+VALUES (ticket_price,class,seat,customer_id,flight_id);
+UPDATE customer_bank_accounts
+SET balance=balance - ticket_price;
+COMMIT; 
+END
+
+18.
+CREATE TRIGGER upcomming_flights AFTER UPDATE
+ON flights
+FOR EACH ROW
+BEGIN
+DECLARE passengers INT;
+DECLARE origin VARCHAR(30);
+DECLARE destination VARCHAR(30);
+SET passengers:=(SELECT COUNT(ticket_id) FROM tickets AS t JOIN flights AS f ON new.flight_id=t.flight_id);
+SET origin:=(SELECT airport_name FROM airports AS a JOIN flights AS f ON new.origin_airport_id=a.airport_id);
+SET destination=(SELECT airport_name FROM airports AS a JOIN flights AS f ON new.destination_airport_id=a.airport_id);
+IF(old.status='Departing' AND  old.status='Delayed') THEN 
+INSERT INTO arrived_flights(flight_id,arrival_time,origin,destination,passengers)
+VALUES(new.flight_id,new.arrival_time,origin,destination,passengers);
+UPDATE flights
+SET status='Arrived'
+WHERE old.flight_id=new.flight_id;
+END IF;
+END
+
+
