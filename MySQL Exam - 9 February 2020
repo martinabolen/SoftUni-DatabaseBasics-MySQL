@@ -1,0 +1,168 @@
+1.
+CREATE TABLE coaches
+(
+id INT(11) NOT NULL PRIMARY KEY AUTO_INCREMENT,
+first_name VARCHAR(10) NOT NULL,
+last_name VARCHAR(20) NOT NULL,
+salary DECIMAL(10,2) NOT NULL DEFAULT 0,
+coach_level INT(11) NOT NULL DEFAULT 0
+);
+
+
+CREATE TABLE countries
+(
+id INT(11) NOT NULL PRIMARY KEY AUTO_INCREMENT,
+name VARCHAR(45) NOT NULL
+);
+
+CREATE TABLE towns
+(
+id INT(11) NOT NULL PRIMARY KEY AUTO_INCREMENT,
+name VARCHAR(45) NOT NULL,
+country_id INT(11) NOT NULL,
+CONSTRAINT fk_towns_countries FOREIGN KEY(country_id) REFERENCES countries(id)
+);
+
+create table stadiums
+(
+id INT(11) NOT NULL PRIMARY KEY AUTO_INCREMENT,
+name VARCHAR(45) NOT NULL,
+capacity int(11) not null,
+town_id INT(11) NOT NULL,
+CONSTRAINT fk_stadiums_towns FOREIGN KEY(town_id) REFERENCES towns(id)
+);
+
+CREATE TABLE teams
+(
+id INT(11) NOT NULL PRIMARY KEY AUTO_INCREMENT,
+name VARCHAR(45) NOT NULL,
+established DATE NOT NULL,
+fan_base BIGINT(20) NOT NULL DEFAULT 0,
+stadium_id INT(11) NOT NULL,
+CONSTRAINT fk_teams_stadiums FOREIGN KEY(stadium_id) REFERENCES stadiums(id)
+);
+
+create table skills_data	
+(
+id INT(11) NOT NULL PRIMARY KEY AUTO_INCREMENT,
+dribbling INT(11) DEFAULT 0,
+pace INT(11) DEFAULT 0,
+passing INT(11) DEFAULT 0,
+shooting INT(11) DEFAULT 0,
+speed INT(11) DEFAULT 0,
+strength INT(11) DEFAULT 0
+);
+
+create table players
+(
+id INT(11) NOT NULL PRIMARY KEY AUTO_INCREMENT,
+first_name VARCHAR(10) NOT NULL,
+last_name VARCHAR(20) NOT NULL,
+age INT(11) NOT NULL DEFAULT 0,
+`position` CHAR(1) NOT NULL,
+salary DECIMAL(10,2) NOT NULL DEFAULT 0,
+hire_date DATETIME,
+skills_data_id int(11) NOT NULL,
+team_id INT(11) ,
+CONSTRAINT CHECK (`position` IN('A','M','D')),
+CONSTRAINT fk_players_teams FOREIGN KEY(team_id) REFERENCES teams(id),
+CONSTRAINT fk_players_skills_data FOREIGN KEY(skills_data_id) REFERENCES skills_data(id)
+);
+
+CREATE TABLE players_coaches
+(
+player_id INT(11),
+coach_id INT(11),
+CONSTRAINT pk_players_coaches PRIMARY KEY(player_id,coach_id),
+CONSTRAINT fk_players_coaches_players FOREIGN KEY(player_id) REFERENCES players(id),
+CONSTRAINT fk_players_coaches_coaches FOREIGN KEY(coach_id) REFERENCES coaches(id)
+);
+
+2.
+INSERT INTO coaches(first_name,last_name,salary,coach_level)
+SELECT
+p.first_name,
+p.last_name,
+p.salary * 2,
+char_length(p.first_name)
+FROM players AS p
+WHERE p.age>=45;
+
+3.
+UPDATE coaches as c
+join players_coaches as pc ON pc.coach_id=c.id
+SET c.coach_level=coach_level+1
+WHERE LEFT(c.first_name,1)='A';
+
+4.
+delete from players
+where age>=45
+
+5.
+SELECT first_name,age,salary
+FROM players
+order by salary desc;
+
+
+6.
+SELECT p.id,CONCAT(p.first_name,' ',p.last_name) AS full_name,p.age,p.position,p.hire_date
+FROM players AS p
+JOIN skills_data AS s ON s.id=p.skills_data_id
+WHERE p.age<23 AND p.position='A' AND p.hire_date IS NULL AND s.strength>50
+order by p.salary,p.age;
+
+
+7.
+SELECT t.name as team_name,t.established,t.fan_base,count(p.id) as players_count
+FROM teams AS t
+left JOIN players AS p ON p.team_id=t.id
+group by t.id
+order by count(p.id) desc,t.fan_base desc;
+
+8.
+SELECT MAX(sk.speed),t.name
+FROM towns AS t 
+LEFT JOIN stadiums AS s ON s.town_id=t.id
+left join teams as te ON te.stadium_id=s.id
+left join players as p ON p.team_id=te.id
+LEFT JOIN skills_data as sk ON sk.id=p.skills_data_id
+where te.name <>'Devify'
+group by t.name
+order by MAX(sk.speed) desc,t.name
+
+9.
+SELECT c.name,COUNT(p.id) as total_count_of_players,SUM(p.salary) as total_sum_of_salaries
+FROM players as p
+right JOIN teams as t ON t.id=p.team_id
+right join stadiums as s ON s.id=t.stadium_id
+right join towns as tow ON tow.id=s.town_id
+right join countries as c ON c.id=tow.country_id
+group by c.name
+order by COUNT(p.id) desc,c.name;
+
+
+10.
+CREATE FUNCTION udf_stadium_players_count(stadium_name VARCHAR(30)) 
+RETURNS INT
+BEGIN
+DECLARE p_count INT;
+SET p_count:=(SELECT count(p.id)
+FROM stadiums AS s
+LEFT JOIN teams AS t ON t.stadium_id=s.id
+LEFT JOIN players as p ON p.team_id=t.id
+where s.name=stadium_name 
+group by s.name);
+RETURN p_count;
+END;
+
+11.
+CREATE PROCEDURE udp_find_playmaker(min_dribble_points INT,team_name VARCHAR(45))
+BEGIN
+SELECT CONCAT(p.first_name,' ',p.last_name) as full_name,p.age,p.salary,s.dribbling,s.speed,t.name
+FROM players AS p 
+JOIN skills_data as s on s.id=p.skills_data_id
+JOIN teams as t ON t.id=p.team_id
+WHERE s.dribbling>min_dribble_points and t.name=team_name and s.speed>(select avg(s.speed) from skills_data AS s join players AS p on s.id=p.skills_data_id)
+order by s.speed desc
+limit 1;
+END 
