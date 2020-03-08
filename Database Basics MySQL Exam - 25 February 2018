@@ -1,0 +1,143 @@
+
+2.
+INSERT INTO issues (title,issue_status,repository_id,assignee_id)
+SELECT CONCAT('Critical Problem With',' ',f.name,'!',' '),
+CONCAT('open',' '),
+CONCAT(CEIL(f.id*2/3),' ') ,
+c.contributor_id
+FROM files AS f
+JOIN commits AS c ON f.commit_id=c.id
+WHERE f.id BETWEEN 46 AND 50;
+
+3.
+UPDATE repositories_contributors
+SET repository_id = (SELECT lowest_id.id FROM (SELECT r.id FROM repositories_contributors AS rc
+							RIGHT  JOIN repositories AS r ON r.id = rc.repository_id
+							WHERE rc.contributor_id IS NULL
+							ORDER BY rc.repository_id ASC
+							LIMIT 1) AS lowest_id)
+WHERE repository_id = contributor_id
+
+4.
+DELETE FROM repositories
+WHERE id NOT IN (SELECT repository_id FROM issues);
+
+5.
+SELECT id,username FROM users
+ORDER BY id,username;
+
+6.
+SELECT repository_id,contributor_id
+FROM repositories_contributors
+WHERE repository_id=contributor_id
+ORDER BY repository_id;
+
+7.
+SELECT id,name,size
+FROM files
+WHERE name LIKE '%html%' AND size>1000
+ORDER BY size desc;
+
+8.
+SELECT i.id,CONCAT(u.username,' : ',i.title) AS issue_assignee
+FROM issues AS i
+JOIN users AS u ON i.assignee_id=u.id
+ORDER BY i.id desc;
+
+9.
+SELECT f.id,f.name,CONCAT(f.size,'KB') as size
+FROM files AS f
+LEFT JOIN files AS fi ON f.id=fi.parent_id
+WHERE fi.parent_id IS NULL
+ORDER by f.id;
+
+10.
+SELECT r.id,r.name,COUNT(i.id) AS issues
+FROM repositories AS r
+JOIN issues AS i  ON r.id=i.repository_id
+GROUP BY r.id,r.name
+ORDER BY issues desc,r.id
+LIMIT 5;
+
+11.
+SELECT res.id, res.name, COUNT(c.id) AS 'commits', res.cnt AS 'contributors'
+FROM
+(SELECT r.id, r.name, COUNT(rc.contributor_id) AS cnt
+FROM repositories_contributors AS rc
+JOIN repositories AS r
+ON rc.repository_id = r.id
+GROUP BY r.id
+order by cnt DESC
+) AS res
+LEFT JOIN commits AS c
+ON res.id = c.repository_id
+GROUP BY res.id
+order by res.cnt DESC, res.id ASC
+LIMIT 1;
+
+12.
+SELECT u.id,u.username,IFNULL(k.counts,0)
+from users AS u
+left join (select COUNT(c.id) as counts,c.contributor_id from commits as c join issues as i ON i.assignee_id=c.contributor_id
+where c.issue_id=i.id GROUP BY c.issue_id,i.assignee_id) as k
+ON k.contributor_id=u.id
+group by u.id
+order by k.counts desc,u.id
+
+13.
+SELECT f1.id, SUBSTRING_INDEX(f1.name,'.',1) AS 'file'
+FROM files AS f1
+JOIN files AS f2
+ON f1.parent_id = f2.id
+WHERE f1.id = f2.parent_id AND f2.id = f1.parent_id
+
+
+14.
+SELECT r.id, r.name, COUNT(DISTINCT c.contributor_id) AS `users`
+FROM repositories AS r
+LEFT JOIN commits AS c
+ON r.id = c.repository_id
+GROUP BY r.id
+ORDER BY `users` DESC, r.id ASC; 
+
+
+15.
+CREATE PROCEDURE udp_commit(username VARCHAR(30),password VARCHAR(30),message VARCHAR(100),issue_id INT)
+BEGIN
+START TRANSACTION;
+IF username NOT IN (SELECT username FROM users)
+THEN
+SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'No such user!';
+ROLLBACK;
+ELSEIF password NOT IN (SELECT password FROM users AS u WHERE u.username=username)
+THEN
+SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Password is incorrect!';
+ROLLBACK;
+ELSEIF issue_id NOT IN (SELECT id FROM issues)
+THEN
+SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'The issue does not exist!';
+ROLLBACK;
+else
+INSERT INTO commits (message,issue_id,repository_id,contributor_id)
+VALUES
+(message,
+issue_id,
+(SELECT repository_id FROM issues AS i WHERE i.id=issue_id),
+(SELECT id FROM users AS u WHERE u.username=username)
+);
+UPDATE issues
+SET issue_status='closed'
+WHERE id=issue_id;
+COMMIT;
+END IF;
+END
+
+
+16.
+CREATE PROCEDURE `udp_findbyextension` (`extension` VARCHAR(30))
+BEGIN
+	SELECT f.id, f.name AS caption, CONCAT(f.size,'KB') AS `user`
+	FROM files AS f
+	WHERE SUBSTRING_INDEX(f.name,'.',-1) = `extension`
+	ORDER BY f.id ASC;
+END 
