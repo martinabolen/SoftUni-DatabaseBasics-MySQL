@@ -1,0 +1,173 @@
+1.
+CREATE TABLE articles
+(
+id INT PRIMARY KEY AUTO_INCREMENT,
+title VARCHAR(50) NOT NULL,
+content TEXT NOT NULL,
+category_id INT
+);
+
+CREATE TABLE categories
+(
+id INT PRIMARY KEY AUTO_INCREMENT,
+category VARCHAR(30) NOT NULL
+);
+
+ALTER TABLE articles
+ADD CONSTRAINT fk_articles_categories FOREIGN KEY(category_id) REFERENCES categories(id);
+
+
+CREATE TABLE comments
+(
+id INT PRIMARY KEY AUTO_INCREMENT,
+comment VARCHAR(255) NOT NULL,
+article_id INT NOT NULL,
+user_id INT NOT NULL,
+CONSTRAINT fk_comments_articles FOREIGN KEY(article_id) REFERENCES articles(id)
+);
+
+CREATE TABLE users
+(
+id INT PRIMARY KEY AUTO_INCREMENT,
+username VARCHAR(30) NOT NULL UNIQUE,
+password VARCHAR(30) NOT NULL,
+email VARCHAR(50) NOT NULL
+);
+
+ALTER TABLE comments
+ADD CONSTRAINT fk_comments_users FOREIGN KEY(user_id) REFERENCES users(id);
+
+CREATE TABLE users_articles
+(
+user_id INT,
+article_id INT,
+CONSTRAINT fk_ua_users FOREIGN KEY(user_id) REFERENCES users(id),
+CONSTRAINT fk_ua_articles FOREIGN KEY(article_id) REFERENCES articles(id)
+);
+
+
+CREATE TABLE likes
+(
+id INT PRIMARY KEY AUTO_INCREMENT,
+article_id INT,
+comment_id INT,
+user_id INT NOT NULL,
+CONSTRAINT fk_likes_articles FOREIGN KEY(article_id) REFERENCES articles(id),
+CONSTRAINT fk_likes_comments FOREIGN KEY(comment_id) REFERENCES comments(id),
+CONSTRAINT fk_likes_users FOREIGN KEY(user_id) REFERENCES users(id)
+);
+
+
+
+2.
+INSERT INTO likes (article_id,comment_id,user_id) 
+SELECT
+CASE 
+WHEN u.id%2=0 THEN char_length(u.username)
+WHEN u.id%2<>0 THEN null
+END,
+CASE 
+WHEN u.id%2=0 THEN NULL
+WHEN u.id%2<>0 THEN char_length(u.email)
+end,
+u.id
+FROM users as u
+WHERE u.id BETWEEN 16 AND 20
+
+3.
+UPDATE comments
+SET comment=CASE
+WHEN id%2=0 THEN 'Very good article.'
+WHEN id%3=0 THEN 'This is interesting.'
+WHEN id%5=0 THEN 'I definitely will read the article again.'
+WHEN id%7=0 THEN 'The universe is such an amazing thing.'
+ELSE comment 
+END
+WHERE id BETWEEN 1 AND 15;
+
+4.
+DELETE FROM articles
+WHERE category_id is null
+
+5.
+SELECT k.title,CONCAT(SUBSTRING(k.content,1,20),'...')as summary
+from
+(SELECT length(content),content,title,id
+from articles
+order by length(content) desc
+LIMIT 3) AS k
+order by k.id
+
+6.
+SELECT a.id,a.title
+FROM articles AS a
+JOIN users_articles AS ua ON a.id=ua.article_id
+WHERE ua.user_id=ua.article_id
+order by a.id
+
+7.
+SELECT m.category,n.articles,m.likes FROM 
+(SELECT COUNT(l.id) as likes,c.category,c.id
+FROM likes as l
+JOIN articles as a ON l.article_id=a.id
+JOIN categories as c ON c.id=a.category_id
+GROUP BY c.id) as m
+JOIN
+(SELECT COUNT(a.id) as articles,c.category
+from articles as a
+JOIN categories as c ON c.id=a.category_id
+GROUP BY a.category_id) as n
+ON m.category=n.category
+order by m.likes desc,n.articles desc,m.id
+
+8.
+SELECT a.title,count(c.id) as comments
+FROM comments AS c
+JOIN articles AS a ON c.article_id=a.id
+JOIN categories AS ca ON ca.id=a.category_id
+where ca.category='Social'
+group by a.id
+order by count(c.id) desc
+limit 1
+
+9.
+SELECT CONCAT(SUBSTRING(c.comment,1,20),'...') as summary
+FROM comments as c
+left JOIN likes AS l ON l.comment_id=c.id
+where l.comment_id IS NULL
+order by c.id desc
+
+10.
+CREATE FUNCTION udf_users_articles_count(username VARCHAR(30)) 
+RETURNS INT
+BEGIN
+DECLARE a_count INT;
+SET a_count:=(SELECT COUNT(ua.article_id) 
+FROM users_articles as ua JOIN users as u ON u.id=ua.user_id
+WHERE u.username=username
+group by ua.user_id
+);
+RETURN a_count;
+END
+
+11.
+CREATE PROCEDURE udp_like_article(username VARCHAR(30), title VARCHAR(30))
+BEGIN
+START TRANSACTION;
+IF username NOT IN(SELECT u.username FROM users AS u)
+THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Non-existent user.';
+ROLLBACK;
+ELSEIF title NOT IN(SELECT a.title FROM articles as a)
+THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Non-existent article.';
+ROLLBACK;
+ELSE
+INSERT INTO likes(article_id,comment_id,user_id)
+VALUES
+(
+(SELECT a.id FROM articles as a WHERE a.title=title),
+NULL,
+(SELECT u.id FROM users AS u WHERE u.username=username)
+);
+END IF;
+COMMIT;
+END
